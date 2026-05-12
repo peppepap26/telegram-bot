@@ -142,6 +142,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("BOT AVVIATO")
+print(TOKEN)
 
     app.run_polling()
 
