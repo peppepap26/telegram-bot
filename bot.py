@@ -132,7 +132,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=keyboard)
 
     elif data == "back":
-     await query.message.reply_text("Scrivi /start")
+        await query.message.reply_text("Scrivi /start")
 
 
 def main():
@@ -142,7 +142,6 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("BOT AVVIATO")
-print(TOKEN)
 
     app.run_polling()
 
