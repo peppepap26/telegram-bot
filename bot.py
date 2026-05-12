@@ -2,117 +2,45 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-import os
+# TOKEN da Render (Environment Variables)
+TOKEN = os.getenv("8740234622:AAETXRO3QCMR0pmvTpJ0vK93LhIGzzho9ho")
 
-TOKEN = os.getenv("BOT_TOKEN")
-
+# PRODOTTI
 products = {
-
-    1: {
-        "name": "Kinder Cards",
-        "price": 1.00,
-        "stock": 30,
-        "image": "kinder_cards.jpg"
-    },
-
-    2: {
-        "name": "Ringo Cheesecake Booom",
-        "price": 1.00,
-        "stock": 24,
-        "image": "ringo_cheesecake.jpg"
-    },
-
-    3: {
-        "name": "NESQUIK Maxi Choco",
-        "price": 1.00,
-        "stock": 20,
-        "image": "nesquik.jpg"
-    },
-
-    4: {
-        "name": "Baiocchi Pistacchio",
-        "price": 1.00,
-        "stock": 24,
-        "image": "baiocchi_pistacchio.jpg"
-    },
-
-    5: {
-        "name": "Kinder Duo",
-        "price": 1.00,
-        "stock": 12,
-        "image": "kinder_duo.jpg"
-    },
-
-    6: {
-        "name": "Bisco Cioc",
-        "price": 1.00,
-        "stock": 18,
-        "image": "bisco_cioc.jpg"
-    }
-
+    1: {"name": "Kinder Cards", "price": 1.00, "stock": 30},
+    2: {"name": "Ringo Cheesecake Booom", "price": 1.00, "stock": 24},
+    3: {"name": "NESQUIK Maxi Choco", "price": 1.00, "stock": 20},
+    4: {"name": "Baiocchi Pistacchio", "price": 1.00, "stock": 24},
+    5: {"name": "Kinder Duo", "price": 1.00, "stock": 12},
+    6: {"name": "Bisco Cioc", "price": 1.00, "stock": 18},
 }
-
 
 carts = {}
 
-
 def get_cart(user_id):
-
     if user_id not in carts:
         carts[user_id] = {}
-
     return carts[user_id]
 
 
-def get_total(cart):
-
-    total = 0
-
-    for pid, qty in cart.items():
-
-        total += products[pid]["price"] * qty
-
-    return total
-
-
+# MENU
 def build_menu(cart):
-
     keyboard = []
 
-    total = get_total(cart)
-
     for pid, p in products.items():
-
         qty = cart.get(pid, 0)
-
-        text = f"{p['name']}"
+        text = f"{p['name']} ({p['stock']})"
 
         if qty > 0:
             text += f" 🛒{qty}"
 
-        text += f" ({p['stock']})"
-
         keyboard.append([
-
-            InlineKeyboardButton(
-                f"➕ {text}",
-                callback_data=f"add_{pid}"
-            ),
-
-            InlineKeyboardButton(
-                "➖",
-                callback_data=f"remove_{pid}"
-            )
-
+            InlineKeyboardButton(f"➕ {text}", callback_data=f"add_{pid}"),
+            InlineKeyboardButton("➖", callback_data=f"remove_{pid}")
         ])
 
     keyboard.append([
-
-        InlineKeyboardButton(
-            f"🛒 CARRELLO • {total:.2f}€",
-            callback_data="cart"
-        )
-
+        InlineKeyboardButton("🛒 APRI CARRELLO", callback_data="cart")
     ])
 
     return InlineKeyboardMarkup(keyboard)
@@ -120,207 +48,105 @@ def build_menu(cart):
 
 # START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     cart = get_cart(update.effective_user.id)
 
-    await update.message.reply_photo(
-
-        photo=open("kinder_cards.jpg", "rb"),
-
-        caption=(
-            "🍫 PIANO BAR POS\n\n"
-            "Sistema cassa rapido"
-        ),
-
+    await update.message.reply_text(
+        "🍫 PIANO BAR BOT\n\nSeleziona prodotti:",
         reply_markup=build_menu(cart)
     )
 
 
 # BOTTONI
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
-
     await query.answer()
 
     user_id = query.from_user.id
-
     cart = get_cart(user_id)
 
     data = query.data
 
-
     # ➕ AGGIUNGI
     if data.startswith("add_"):
-
         pid = int(data.split("_")[1])
 
-        product = products[pid]
-
-        if product["stock"] <= 0:
-
-            await query.answer(
-                "❌ Prodotto esaurito",
-                show_alert=True
-            )
-
+        if products[pid]["stock"] <= 0:
+            await query.answer("❌ Esaurito")
             return
 
         cart[pid] = cart.get(pid, 0) + 1
+        products[pid]["stock"] -= 1
 
-        product["stock"] -= 1
-
-        total = get_total(cart)
-
-        text = (
-            f"🍫 PIANO BAR POS\n\n"
-            f"✅ Aggiunto:\n"
-            f"{product['name']}\n\n"
-            f"💰 Totale: {total:.2f}€"
-        )
-
-        await query.edit_message_media(
-
-            media=InputMediaPhoto(
-                media=open(product["image"], "rb"),
-                caption=text
-            ),
-
-            reply_markup=build_menu(cart)
-        )
-
+        await query.edit_message_reply_markup(reply_markup=build_menu(cart))
 
     # ➖ RIMUOVI
     elif data.startswith("remove_"):
-
         pid = int(data.split("_")[1])
 
         if cart.get(pid, 0) > 0:
-
             cart[pid] -= 1
-
             products[pid]["stock"] += 1
 
             if cart[pid] <= 0:
                 del cart[pid]
 
-        total = get_total(cart)
-
-        await query.edit_message_caption(
-
-            caption=(
-                "🍫 PIANO BAR POS\n\n"
-                f"💰 Totale: {total:.2f}€"
-            ),
-
-            reply_markup=build_menu(cart)
-        )
-
+        await query.edit_message_reply_markup(reply_markup=build_menu(cart))
 
     # 🛒 CARRELLO
     elif data == "cart":
-
         text = "🛒 CARRELLO\n\n"
-
-        total = get_total(cart)
+        total = 0
 
         if not cart:
-
             text += "Carrello vuoto"
-
         else:
-
             for pid, qty in cart.items():
-
                 p = products[pid]
-
                 subtotal = p["price"] * qty
+                total += subtotal
 
-                text += (
-                    f"{p['name']} x{qty}\n"
-                    f"= {subtotal:.2f}€\n\n"
-                )
+                text += f"{p['name']} x{qty}\n= {subtotal:.2f}€\n\n"
 
             text += f"💰 TOTALE: {total:.2f}€"
 
-        paypal = f"https://www.paypal.me/giuseppepapangelo/{total:.2f}"
+        paypal = f"https://www.paypal.paypal.me/giuseppepapangelome/total:.2f}"
 
         keyboard = [
-
-            [
-                InlineKeyboardButton(
-                    "💳 PAYPAL",
-                    url=paypal
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
-                    "🗑 SVUOTA",
-                    callback_data="clear"
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
-                    "⬅️ MENU",
-                    callback_data="back"
-                )
-            ]
-
+            [InlineKeyboardButton("💳 Paga PayPal", url=paypal)],
+            [InlineKeyboardButton("🗑 Svuota carrello", callback_data="clear")],
+            [InlineKeyboardButton("⬅️ Torna al menu", callback_data="back")]
         ]
 
-        await query.edit_message_caption(
-
-            caption=text,
-
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
     # 🗑 SVUOTA
     elif data == "clear":
-
         for pid, qty in cart.items():
-
             products[pid]["stock"] += qty
 
         cart.clear()
 
-        await query.edit_message_caption(
-
-            caption="🗑 Carrello svuotato",
-
+        await query.edit_message_text(
+            "🗑 Carrello svuotato",
             reply_markup=build_menu(cart)
         )
 
-
-    # 🔙 MENU
+    # 🔙 BACK
     elif data == "back":
-
-        total = get_total(cart)
-
-        await query.edit_message_caption(
-
-            caption=(
-                "🍫 PIANO BAR POS\n\n"
-                f"💰 Totale: {total:.2f}€"
-            ),
-
+        await query.edit_message_text(
+            "🍫 PIANO BAR BOT\n\nSeleziona prodotti:",
             reply_markup=build_menu(cart)
         )
 
 
-# AVVIO
+# MAIN
 def main():
-
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("POS AVVIATO")
+    print("BOT AVVIATO")
 
     app.run_polling()
 
