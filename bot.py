@@ -132,7 +132,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=keyboard)
 
     elif data == "back":
-        await start(update, context)
+    await query.message.reply_text("Scrivi /start")
 
 
 def main():
