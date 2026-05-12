@@ -107,32 +107,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Rimosso")
 
     elif data == "cart":
+    total = 0
+
+    if not cart:
+        text = "🛒 CARRELLO\n\nIl carrello è vuoto"
+    else:
         text = "🛒 CARRELLO\n\n"
-        total = 0
 
-        if not cart:
-            text += "Vuoto"
-        else:
-            for pid, qty in cart.items():
-                p = products[pid]
-                subtotal = p["price"] * qty
-                total += subtotal
+        for pid, qty in cart.items():
+            p = products[pid]
+            subtotal = p["price"] * qty
+            total += subtotal
 
-                text += f"{p['name']} x{qty} = {subtotal:.2f}€\n"
+            text += f"{p['name']} x{qty} = {subtotal:.2f}€\n"
 
-            text += f"\n💰 TOTALE: {total:.2f}€"
+        text += f"\n💰 TOTALE: {total:.2f}€"
 
-        paypal = f"https://www.paypal.me/giuseppepapangelo/{total:.2f}"
+    paypal = f"https://www.paypal.me/giuseppepapangelo/{total:.2f}"
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Paga PayPal", url=paypal)],
-            [InlineKeyboardButton("⬅️ Torna", callback_data="back")]
-        ])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Paga PayPal", url=paypal)],
+        [InlineKeyboardButton("⬅️ Torna", callback_data="back")]
+    ])
 
-        await query.edit_message_text(text, reply_markup=keyboard)
-
-    elif data == "back":
-        await query.message.reply_text("Scrivi /start")
+    await query.edit_message_text(text=text, reply_markup=keyboard)
 
 
 def main():
