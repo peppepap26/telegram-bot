@@ -122,7 +122,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             text += f"\n💰 TOTALE: {total:.2f}€"
 
-        paypal = f"https://www.paypal.me/{@giuseppepapangelo}/{total:.2f}"
+        paypal = f"https://www.paypal.me/giuseppepapangelo/{total:.2f}"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("💳 Paga PayPal", url=paypal)],
