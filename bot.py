@@ -2,8 +2,8 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# TOKEN da Render (Environment Variables)
-TOKEN = os.getenv("8740234622:AAETXRO3QCMR0pmvTpJ0vK93LhIGzzho9ho")
+
+TOKEN = os.getenv("TOKEN")
 
 # PRODOTTI
 products = {
@@ -17,6 +17,7 @@ products = {
 
 carts = {}
 
+# CREA CARRELLO UTENTE
 def get_cart(user_id):
     if user_id not in carts:
         carts[user_id] = {}
@@ -29,14 +30,14 @@ def build_menu(cart):
 
     for pid, p in products.items():
         qty = cart.get(pid, 0)
-        text = f"{p['name']} ({p['stock']})"
+        text = p["name"] + " (" + str(p["stock"]) + ")"
 
         if qty > 0:
-            text += f" 🛒{qty}"
+            text = text + " 🛒" + str(qty)
 
         keyboard.append([
-            InlineKeyboardButton(f"➕ {text}", callback_data=f"add_{pid}"),
-            InlineKeyboardButton("➖", callback_data=f"remove_{pid}")
+            InlineKeyboardButton("➕ " + text, callback_data="add_" + str(pid)),
+            InlineKeyboardButton("➖", callback_data="remove_" + str(pid))
         ])
 
     keyboard.append([
@@ -84,7 +85,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid = int(data.split("_")[1])
 
         if cart.get(pid, 0) > 0:
-            cart[pid] -= 1
+            cart[pid] = cart.get(pid, 0) - 1
             products[pid]["stock"] += 1
 
             if cart[pid] <= 0:
@@ -96,46 +97,54 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cart":
         text = "🛒 CARRELLO\n\n"
         total = 0
+        keyboard = []
 
-        if not cart:
-            text += "Carrello vuoto"
+        if len(cart) == 0:
+            text = text + "Carrello vuoto"
+            keyboard = [
+                [InlineKeyboardButton("⬅️ Torna al menu", callback_data="back")]
+            ]
         else:
-            for pid, qty in cart.items():
-                p = products[pid]
-                subtotal = p["price"] * qty
-                total += subtotal
+            for pid in cart:
+                qty = cart[pid]
+                product = products[pid]
+                subtotal = product["price"] * qty
+                total = total + subtotal
 
-                text += f"{p['name']} x{qty}\n= {subtotal:.2f}€\n\n"
+                text = text + product["name"] + " x" + str(qty) + "\n= " + str(round(subtotal, 2)) + "€\n\n"
 
-            text += f"💰 TOTALE: {total:.2f}€"
+            text = text + "💰 TOTALE: " + str(round(total, 2)) + "€"
 
-paypal = f"https://www.paypal.me/giuseppepapangelome/{total:.2f}"
+            paypal_link = "https://www.paypal.me/" + "giuseppepapangelo" + "/" + str(round(total, 2))
 
-        keyboard = [
-            [InlineKeyboardButton("💳 Paga PayPal", url=paypal)],
-            [InlineKeyboardButton("🗑 Svuota carrello", callback_data="clear")],
-            [InlineKeyboardButton("⬅️ Torna al menu", callback_data="back")]
-        ]
+            keyboard = [
+                [InlineKeyboardButton("💳 Paga PayPal", url=paypal_link)],
+                [InlineKeyboardButton("🗑 Svuota carrello", callback_data="clear")],
+                [InlineKeyboardButton("⬅️ Torna al menu", callback_data="back")]
+            ]
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     # 🗑 SVUOTA
     elif data == "clear":
-        for pid, qty in cart.items():
-            products[pid]["stock"] += qty
+        for pid in cart:
+            products[pid]["stock"] = products[pid]["stock"] + cart[pid]
 
-        cart.clear()
+        carts[user_id] = {}
 
         await query.edit_message_text(
             "🗑 Carrello svuotato",
-            reply_markup=build_menu(cart)
+            reply_markup=build_menu(get_cart(user_id))
         )
 
     # 🔙 BACK
     elif data == "back":
         await query.edit_message_text(
             "🍫 PIANO BAR BOT\n\nSeleziona prodotti:",
-            reply_markup=build_menu(cart)
+            reply_markup=build_menu(get_cart(user_id))
         )
 
 
