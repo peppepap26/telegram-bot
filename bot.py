@@ -5,16 +5,14 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 
 TOKEN = os.getenv("TOKEN")
 
-# PRODOTTI
 products = {
-    1: {"name": "Kinder Cards", "price": 1.00, "stock": 30},
-    2: {"name": "Ringo Cheesecake Booom", "price": 1.00, "stock": 24},
-    3: {"name": "NESQUIK Maxi Choco", "price": 1.00, "stock": 20},
-    4: {"name": "Baiocchi Pistacchio", "price": 1.00, "stock": 24},
-    5: {"name": "Kinder Duo", "price": 1.00, "stock": 12},
-    6: {"name": "Bisco Cioc", "price": 1.00, "stock": 18},
+    1: {"name": "Kinder Cards", "price": 1.00, "stock": 30, "img": "https://i.imgur.com/xxxxx1.jpg"},
+    2: {"name": "Ringo Cheesecake Booom", "price": 1.00, "stock": 24, "img": "https://i.imgur.com/xxxxx2.jpg"},
+    3: {"name": "NESQUIK Maxi Choco", "price": 1.00, "stock": 20, "img": "https://i.imgur.com/xxxxx3.jpg"},
+    4: {"name": "Baiocchi Pistacchio", "price": 1.00, "stock": 24, "img": "https://i.imgur.com/xxxxx4.jpg"},
+    5: {"name": "Kinder Duo", "price": 1.00, "stock": 12, "img": "https://i.imgur.com/xxxxx5.jpg"},
+    6: {"name": "Bisco Cioc", "price": 1.00, "stock": 18, "img": "https://i.imgur.com/xxxxx6.jpg"},
 }
-
 carts = {}
 
 # CREA CARRELLO UTENTE
@@ -51,10 +49,16 @@ def build_menu(cart):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cart = get_cart(update.effective_user.id)
 
-    await update.message.reply_text(
-        "🍫 PIANO BAR BOT\n\nSeleziona prodotti:",
-        reply_markup=build_menu(cart)
-    )
+    for pid, p in products.items():
+        await update.message.reply_photo(
+            photo=p["img"],
+            caption=f"{p['name']} - {p['price']}€",
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("➕ Aggiungi", callback_data=f"add_{pid}")
+                ]
+            ])
+        )
 
 
 # BOTTONI
