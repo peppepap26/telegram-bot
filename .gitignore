@@ -2,4 +2,8 @@ creds.json
 google_creds.json
 *.json
 __pycache__/
+<<<<<<< HEAD
 .env
+=======
+.env
+>>>>>>> 8f2ba4aa1122d6c347b8081385cc9fb0680bf682
