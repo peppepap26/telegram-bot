@@ -122,8 +122,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             text += f"{p['name']} x{qty} = {subtotal:.2f}€\n"
 
-        text += f"\n💰 TOTALE: {total:.2f}€"
-
     paypal = f"https://www.paypal.me/giuseppepapangelo/{total:.2f}"
 
     keyboard = InlineKeyboardMarkup([
