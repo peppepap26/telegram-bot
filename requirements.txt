@@ -1,7 +1,3 @@
 python-telegram-bot==22.7
 gspread
-<<<<<<< HEAD
 google-auth
-=======
-google-auth
->>>>>>> 8f2ba4aa1122d6c347b8081385cc9fb0680bf682
