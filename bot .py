@@ -1,6 +1,3 @@
-import subprocess
-import sys
-subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "python-telegram-bot[webhooks]==21.3"])
 import os
 import json
 import gspread
@@ -162,13 +159,15 @@ def main():
     print("BOT AVVIATO con WEBHOOK ✅")
 
     app.run_webhook(
-    listen="0.0.0.0",
-    port=int(os.getenv("PORT", 10000)),
-    url_path=f"/{TOKEN}",
-    webhook_url=f"{RENDER_URL}/{TOKEN}",
-    connect_timeout=30,
-    read_timeout=30,
-    write_timeout=30,
-)
+        listen="0.0.0.0",
+        port=int(os.getenv("PORT", 10000)),
+        url_path="webhook",
+        webhook_url=f"{RENDER_URL}/webhook",
+        connect_timeout=30,
+        read_timeout=30,
+        write_timeout=30,
+    )
+
+
 if __name__ == "__main__":
     main()
