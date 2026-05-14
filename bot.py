@@ -108,7 +108,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "cart":
 
-    text = "🛒 CARRELLO\n\n"
     total = 0
 
     if not cart:
