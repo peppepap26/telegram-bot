@@ -1,3 +1,5 @@
 creds.json
+google_creds.json
 *.json
 __pycache__/
+.env
