@@ -164,12 +164,11 @@ def main():
     app.run_webhook(
     listen="0.0.0.0",
     port=int(os.getenv("PORT", 10000)),
-    url_path=TOKEN,
+    url_path=f"/{TOKEN}",
     webhook_url=f"{RENDER_URL}/{TOKEN}",
     connect_timeout=30,
     read_timeout=30,
     write_timeout=30,
 )
-
 if __name__ == "__main__":
     main()
