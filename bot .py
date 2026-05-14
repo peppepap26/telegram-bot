@@ -159,11 +159,14 @@ def main():
     print("BOT AVVIATO con WEBHOOK ✅")
 
     app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.getenv("PORT", 10000)),
-        webhook_url=f"{RENDER_URL}/{TOKEN}"
-    )
-
+    listen="0.0.0.0",
+    port=int(os.getenv("PORT", 10000)),
+    url_path=TOKEN,
+    webhook_url=f"{RENDER_URL}/{TOKEN}",
+    connect_timeout=30,
+    read_timeout=30,
+    write_timeout=30,
+)
 
 if __name__ == "__main__":
     main()
