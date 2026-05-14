@@ -1,13 +1,4 @@
-# env file
-.env
-
-# Google credentials (IMPORTANT)
 creds.json
-google_creds.json
-
-# python cache
 __pycache__/
 *.pyc
-
-# json files (optional - NON mettere se usi sheet JSON locali!)
-# *.json
+.env
