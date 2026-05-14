@@ -1,165 +1,268 @@
 import os
 import json
-import datetime
 import gspread
+
 from google.oauth2.service_account import Credentials
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
 
-# ---------------- ENV ----------------
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes
+)
+
 TOKEN = os.getenv("TOKEN")
-PAYPAL_USER = os.getenv("PAYPAL_USER")
-SHEET_ID = os.getenv("SHEET_ID")
 
-creds_json = json.loads(os.getenv("GOOGLE_CREDS"))
+PAYPAL_USER = "giuseppepapangelo"
 
+SHEET_ID = "1eGDRwUnvveDIYuasMHSbQk8qNpT94nQ_AYNnVWiNS_Q"
+
+
+# GOOGLE SHEETS
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds = Credentials.from_service_account_info(creds_json, scopes=scope)
+creds_dict = json.loads(os.getenv("GOOGLE_CREDS"))
+
+creds = Credentials.from_service_account_info(
+    creds_dict,
+    scopes=scope
+)
+
 client = gspread.authorize(creds)
 
 sheet_products = client.open_by_key(SHEET_ID).worksheet("PRODUCTS")
 sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 
-# ---------------- CART ----------------
+
+# CARRELLI
 carts = {}
 
-def get_cart(user_id):
-    if user_id not in carts:
-        carts[user_id] = {}
-    return carts[user_id]
 
-# ---------------- PRODUCTS LOAD ----------------
-def load_products():
+def get_products():
     rows = sheet_products.get_all_records()
+
     products = {}
 
-    for r in rows:
-        products[int(r["id"])] = {
-            "name": r["name"],
-            "price": float(r["price"]),
-            "stock": int(r["stock"]),
-            "img": r["img"]
+    for row in rows:
+        pid = int(row["id"])
+
+        products[pid] = {
+            "name": row["name"],
+            "price": float(row["price"]),
+            "stock": int(row["stock"]),
+            "img": row["image"]
         }
 
     return products
 
-# ---------------- KEYBOARD ----------------
+
+def update_stock(pid, stock):
+    cell = sheet_products.find(str(pid))
+
+    stock_col = 4
+
+    sheet_products.update_cell(cell.row, stock_col, stock)
+
+
+def get_cart(user_id):
+    if user_id not in carts:
+        carts[user_id] = {}
+
+    return carts[user_id]
+
+
 def product_keyboard(pid):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("➕ Aggiungi", callback_data=f"add_{pid}"),
-            InlineKeyboardButton("➖ Rimuovi", callback_data=f"remove_{pid}")
+            InlineKeyboardButton(
+                "➕ Aggiungi",
+                callback_data=f"add_{pid}"
+            ),
+
+            InlineKeyboardButton(
+                "➖ Rimuovi",
+                callback_data=f"remove_{pid}"
+            )
         ],
-        [InlineKeyboardButton("🛒 Carrello", callback_data="cart")]
+
+        [
+            InlineKeyboardButton(
+                "🛒 Carrello",
+                callback_data="cart"
+            )
+        ]
     ])
 
-# ---------------- START ----------------
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    products = load_products()
+
+    products = get_products()
 
     for pid, p in products.items():
+
         await update.message.reply_photo(
             photo=p["img"],
-            caption=f"{p['name']}\n💰 {p['price']}€\n📦 Stock: {p['stock']}",
+
+            caption=(
+                f"{p['name']}\n"
+                f"💰 {p['price']}€\n"
+                f"📦 Stock: {p['stock']}"
+            ),
+
             reply_markup=product_keyboard(pid)
         )
 
-# ---------------- BUTTONS ----------------
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     query = update.callback_query
+
     await query.answer()
 
     user_id = query.from_user.id
+
     cart = get_cart(user_id)
+
     data = query.data
 
-    products = load_products()
+    products = get_products()
 
-    # ADD
+    # AGGIUNGI
     if data.startswith("add_"):
-        pid = int(data.split("_")[1])
-        p = products[pid]
 
-        if p["stock"] <= 0:
-            await query.answer("Esaurito")
+        pid = int(data.split("_")[1])
+
+        if products[pid]["stock"] <= 0:
+            await query.answer("Prodotto esaurito")
             return
 
         cart[pid] = cart.get(pid, 0) + 1
 
-        sheet_products.update_cell(pid + 1, 4, p["stock"] - 1)
+        new_stock = products[pid]["stock"] - 1
 
-        await query.answer("Aggiunto")
+        update_stock(pid, new_stock)
 
-    # REMOVE
+        await query.answer("Aggiunto al carrello")
+
+    # RIMUOVI
     elif data.startswith("remove_"):
+
         pid = int(data.split("_")[1])
 
         if cart.get(pid, 0) > 0:
+
             cart[pid] -= 1
-            p = products[pid]
 
-            sheet_products.update_cell(pid + 1, 4, p["stock"] + 1)
+            new_stock = products[pid]["stock"] + 1
 
-            if cart[pid] == 0:
+            update_stock(pid, new_stock)
+
+            if cart[pid] <= 0:
                 del cart[pid]
 
         await query.answer("Rimosso")
 
-    # CART
+    # CARRELLO
     elif data == "cart":
 
         total = 0
-        user_id = query.from_user.id
 
         if not cart:
-            text = "🛒 CARRELLO\n\nVuoto"
+
+            text = "🛒 CARRELLO\n\nIl carrello è vuoto"
+
         else:
+
             text = "🛒 CARRELLO\n\n"
 
             for pid, qty in cart.items():
+
                 p = products[pid]
+
                 subtotal = p["price"] * qty
+
                 total += subtotal
 
-                text += f"{p['name']} x{qty} = {subtotal:.2f}€\n"
+                text += (
+                    f"{p['name']} x{qty} = "
+                    f"{subtotal:.2f}€\n"
+                )
 
-                # SAVE SALE ON SHEET
-                sheet_sales.append_row([
-                    str(datetime.datetime.now()),
-                    user_id,
-                    p["name"],
-                    qty,
-                    p["price"],
-                    subtotal
-                ])
+            text += f"\n💰 Totale: {total:.2f}€"
 
-        paypal = f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"
+        paypal = (
+            f"https://paypal.me/"
+            f"{PAYPAL_USER}/{total:.2f}"
+        )
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 PayPal", url=paypal)],
-            [InlineKeyboardButton("⬅️ Torna", callback_data="back")]
+            [
+                InlineKeyboardButton(
+                    "💳 Paga PayPal",
+                    url=paypal
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    "⬅️ Torna",
+                    callback_data="back"
+                )
+            ]
         ])
 
-        await query.edit_message_text(text, reply_markup=keyboard)
+        await query.edit_message_text(
+            text=text,
+            reply_markup=keyboard
+        )
 
-    # BACK
+    # TORNA
     elif data == "back":
-        await start(update, context)
 
-# ---------------- MAIN ----------------
+        await query.message.delete()
+
+        products = get_products()
+
+        for pid, p in products.items():
+
+            await query.message.chat.send_photo(
+                photo=p["img"],
+
+                caption=(
+                    f"{p['name']}\n"
+                    f"💰 {p['price']}€\n"
+                    f"📦 Stock: {p['stock']}"
+                ),
+
+                reply_markup=product_keyboard(pid)
+            )
+
+
 def main():
+
     app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(
+        CommandHandler("start", start)
+    )
+
+    app.add_handler(
+        CallbackQueryHandler(button_handler)
+    )
 
     print("BOT AVVIATO")
+
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
