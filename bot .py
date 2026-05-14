@@ -1,3 +1,6 @@
+import subprocess
+import sys
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "python-telegram-bot[webhooks]==21.3"])
 import os
 import json
 import gspread
