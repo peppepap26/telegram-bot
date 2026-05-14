@@ -3,7 +3,7 @@ services:
     name: telegram-bot
     runtime: python
     pythonVersion: "3.11.9"
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --no-cache-dir "python-telegram-bot[webhooks]==21.3" gspread==6.0.2 google-auth==2.29.0
     startCommand: python bot.py
     envVars:
       - key: TOKEN
