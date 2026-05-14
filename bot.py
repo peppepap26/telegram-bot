@@ -1,20 +1,13 @@
 import os
-import json
 import gspread
 
 from google.oauth2.service_account import Credentials
-
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
-
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    ContextTypes
+    ContextTypes,
 )
 
 TOKEN = os.getenv("TOKEN")
@@ -23,18 +16,14 @@ PAYPAL_USER = "giuseppepapangelo"
 
 SHEET_ID = "1eGDRwUnvveDIYuasMHSbQk8qNpT94nQ_AYNnVWiNS_Q"
 
-
-# GOOGLE SHEETS
-scope = [
+SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds_dict = json.loads(os.getenv("GOOGLE_CREDS"))
-
-creds = Credentials.from_service_account_info(
-    creds_dict,
-    scopes=scope
+creds = Credentials.from_service_account_file(
+    "creds.json",
+    scopes=SCOPES
 )
 
 client = gspread.authorize(creds)
@@ -42,8 +31,6 @@ client = gspread.authorize(creds)
 sheet_products = client.open_by_key(SHEET_ID).worksheet("PRODUCTS")
 sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 
-
-# CARRELLI
 carts = {}
 
 
@@ -53,9 +40,7 @@ def get_products():
     products = {}
 
     for row in rows:
-        pid = int(row["id"])
-
-        products[pid] = {
+        products[int(row["id"])] = {
             "name": row["name"],
             "price": float(row["price"]),
             "stock": int(row["stock"]),
@@ -68,9 +53,20 @@ def get_products():
 def update_stock(pid, stock):
     cell = sheet_products.find(str(pid))
 
-    stock_col = 4
+    if cell:
+        sheet_products.update_cell(cell.row, 4, stock)
 
-    sheet_products.update_cell(cell.row, stock_col, stock)
+
+def save_sale(product, qty, price, total):
+    from datetime import datetime
+
+    sheet_sales.append_row([
+        datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        product,
+        qty,
+        price,
+        total
+    ])
 
 
 def get_cart(user_id):
@@ -87,13 +83,11 @@ def product_keyboard(pid):
                 "➕ Aggiungi",
                 callback_data=f"add_{pid}"
             ),
-
             InlineKeyboardButton(
                 "➖ Rimuovi",
                 callback_data=f"remove_{pid}"
             )
         ],
-
         [
             InlineKeyboardButton(
                 "🛒 Carrello",
@@ -104,26 +98,21 @@ def product_keyboard(pid):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     products = get_products()
 
     for pid, p in products.items():
-
         await update.message.reply_photo(
             photo=p["img"],
-
             caption=(
                 f"{p['name']}\n"
                 f"💰 {p['price']}€\n"
                 f"📦 Stock: {p['stock']}"
             ),
-
             reply_markup=product_keyboard(pid)
         )
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
 
     await query.answer()
@@ -136,7 +125,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     products = get_products()
 
-    # AGGIUNGI
     if data.startswith("add_"):
 
         pid = int(data.split("_")[1])
@@ -153,7 +141,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.answer("Aggiunto al carrello")
 
-    # RIMUOVI
     elif data.startswith("remove_"):
 
         pid = int(data.split("_")[1])
@@ -169,19 +156,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if cart[pid] <= 0:
                 del cart[pid]
 
-        await query.answer("Rimosso")
+        await query.answer("Rimosso dal carrello")
 
-    # CARRELLO
     elif data == "cart":
 
         total = 0
 
         if not cart:
-
             text = "🛒 CARRELLO\n\nIl carrello è vuoto"
 
         else:
-
             text = "🛒 CARRELLO\n\n"
 
             for pid, qty in cart.items():
@@ -197,10 +181,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"{subtotal:.2f}€\n"
                 )
 
-            text += f"\n💰 Totale: {total:.2f}€"
-
         paypal = (
-            f"https://paypal.me/"
+            f"https://www.paypal.me/"
             f"{PAYPAL_USER}/{total:.2f}"
         )
 
@@ -211,11 +193,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     url=paypal
                 )
             ],
-
             [
                 InlineKeyboardButton(
-                    "⬅️ Torna",
-                    callback_data="back"
+                    "✅ Conferma Ordine",
+                    callback_data="confirm"
                 )
             ]
         ])
@@ -225,26 +206,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard
         )
 
-    # TORNA
-    elif data == "back":
+    elif data == "confirm":
 
-        await query.message.delete()
+        total = 0
 
-        products = get_products()
+        for pid, qty in cart.items():
 
-        for pid, p in products.items():
+            p = products[pid]
 
-            await query.message.chat.send_photo(
-                photo=p["img"],
+            subtotal = p["price"] * qty
 
-                caption=(
-                    f"{p['name']}\n"
-                    f"💰 {p['price']}€\n"
-                    f"📦 Stock: {p['stock']}"
-                ),
+            total += subtotal
 
-                reply_markup=product_keyboard(pid)
+            save_sale(
+                p["name"],
+                qty,
+                p["price"],
+                subtotal
             )
+
+        carts[user_id] = {}
+
+        await query.edit_message_text(
+            text=(
+                "✅ Ordine confermato\n\n"
+                f"Totale pagato: {total:.2f}€"
+            )
+        )
 
 
 def main():
@@ -265,8 +253,4 @@ def main():
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
     main()
-=======
-    main()
->>>>>>> 8f2ba4aa1122d6c347b8081385cc9fb0680bf682
