@@ -33,10 +33,16 @@ sheet_products = client.open_by_key(SHEET_ID).worksheet("PRODUCTS")
 sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 
 carts = {}
-
-# Crea Flask e Application
 flask_app = Flask(__name__)
+
+# Crea e inizializza l'application
 application = Application.builder().token(TOKEN).build()
+
+# Inizializza subito in modo sincrono
+async def init_app():
+    await application.initialize()
+
+asyncio.run(init_app())
 
 
 def get_products():
@@ -174,7 +180,7 @@ def webhook():
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CallbackQueryHandler(button_handler))
 
-# Avvia Flask
+print("BOT AVVIATO con WEBHOOK ✅")
+
 if __name__ == "__main__":
-    print("BOT AVVIATO con WEBHOOK ✅")
     flask_app.run(host="0.0.0.0", port=PORT)
