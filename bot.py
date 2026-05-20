@@ -117,15 +117,22 @@ def cart_keyboard(total):
 # ── Handlers ──────────────────────────────────────────────────────
 
 def handle_start(chat_id):
-    products = get_products()
-    for pid, p in products.items():
-        send_photo(
-            chat_id,
-            p["img"],
-            f"{p['name']}\n💰 {p['price']}€\n📦 Stock: {p['stock']}",
-            product_keyboard(pid)
-        )
-
+    try:
+        print("Leggo prodotti da Google Sheets...", flush=True)
+        products = get_products()
+        print(f"Prodotti trovati: {products}", flush=True)
+        for pid, p in products.items():
+            print(f"Invio prodotto {pid}...", flush=True)
+            send_photo(
+                chat_id,
+                p["img"],
+                f"{p['name']}\n💰 {p['price']}€\n📦 Stock: {p['stock']}",
+                product_keyboard(pid)
+            )
+            print(f"Prodotto {pid} inviato!", flush=True)
+    except Exception as e:
+        print(f"ERRORE handle_start: {e}", flush=True)
+        send_message(chat_id, f"Errore: {e}")
 
 def handle_callback(callback_query):
     query_id = callback_query["id"]
