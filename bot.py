@@ -182,7 +182,7 @@ def webhook():
     future = asyncio.run_coroutine_threadsafe(
         application.process_update(update), loop
     )
-    future.result(timeout=30)
+    # non aspettiamo, risponde subito
     return jsonify({"ok": True})
 
 
