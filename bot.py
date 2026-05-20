@@ -191,17 +191,23 @@ def index():
 
 @flask_app.route("/webhook", methods=["POST"])
 def webhook():
-    update = request.get_json(force=True)
+    try:
+        update = request.get_json(force=True)
+        print(f"UPDATE RICEVUTO: {update}", flush=True)
 
-    if "message" in update:
-        msg = update["message"]
-        chat_id = msg["chat"]["id"]
-        text = msg.get("text", "")
-        if text == "/start":
-            handle_start(chat_id)
+        if "message" in update:
+            msg = update["message"]
+            chat_id = msg["chat"]["id"]
+            text = msg.get("text", "")
+            print(f"MESSAGGIO: {text} da {chat_id}", flush=True)
+            if text == "/start":
+                handle_start(chat_id)
 
-    elif "callback_query" in update:
-        handle_callback(update["callback_query"])
+        elif "callback_query" in update:
+            handle_callback(update["callback_query"])
+
+    except Exception as e:
+        print(f"ERRORE: {e}", flush=True)
 
     return jsonify({"ok": True})
 
