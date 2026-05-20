@@ -109,8 +109,7 @@ def build_cart_text(cart, products):
 def build_cart_keyboard(total):
     return {
         "inline_keyboard": [
-            [{"text": f"💳 Paga con PayPal {total:.2f}€", "url": f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"}],
-            [{"text": "✅ Ho pagato → Conferma Ordine", "callback_data": "confirm"}],
+            [{"text": f"💳 Paga con PayPal {total:.2f}€", "callback_data": f"paypal_{int(total*100)}"}],
             [{"text": "🔙 Torna al catalogo", "callback_data": "catalogo"}]
         ]
     }
@@ -200,6 +199,19 @@ def handle_callback(callback_query):
     elif data == "cart":
         answer_callback(query_id)
         update_cart_message(chat_id, user_id, products)
+
+    elif data.startswith("paypal_"):
+        answer_callback(query_id)
+        total = int(data.split("_")[1]) / 100
+        paypal_url = f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"
+        # Manda link PayPal e messaggio conferma separato
+        send_message(chat_id, 
+            f"💳 *Clicca qui per pagare {total:.2f}€ su PayPal:*\n{paypal_url}\n\n"
+            f"Dopo aver pagato clicca il bottone qui sotto 👇",
+            {"inline_keyboard": [
+                [{"text": "✅ Ho pagato → Conferma Ordine", "callback_data": "confirm"}]
+            ]}
+        )
 
     elif data == "confirm":
         answer_callback(query_id)
