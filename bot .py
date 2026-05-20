@@ -1,7 +1,9 @@
 import os
 import json
 import gspread
+import asyncio
 
+from flask import Flask, request, jsonify
 from google.oauth2.service_account import Credentials
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -15,6 +17,7 @@ TOKEN = os.getenv("TOKEN")
 PAYPAL_USER = os.getenv("PAYPAL_USER")
 SHEET_ID = os.getenv("SHEET_ID")
 RENDER_URL = os.getenv("RENDER_URL")
+PORT = int(os.getenv("PORT", 10000))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -30,6 +33,10 @@ sheet_products = client.open_by_key(SHEET_ID).worksheet("PRODUCTS")
 sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 
 carts = {}
+
+# Crea Flask e Application
+flask_app = Flask(__name__)
+application = Application.builder().token(TOKEN).build()
 
 
 def get_products():
@@ -151,23 +158,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-def main():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-
-    print("BOT AVVIATO con WEBHOOK ✅")
-
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.getenv("PORT", 10000)),
-        url_path="webhook",
-        webhook_url=f"{RENDER_URL}/webhook",
-        connect_timeout=30,
-        read_timeout=30,
-        write_timeout=30,
-    )
+@flask_app.route("/")
+def index():
+    return "Bot attivo ✅", 200
 
 
+@flask_app.route("/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    asyncio.run(application.process_update(update))
+    return jsonify({"ok": True})
+
+
+# Registra handler
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(button_handler))
+
+# Avvia Flask
 if __name__ == "__main__":
-    main()
+    print("BOT AVVIATO con WEBHOOK ✅")
+    flask_app.run(host="0.0.0.0", port=PORT)
