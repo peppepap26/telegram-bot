@@ -2,6 +2,7 @@ import os
 import json
 import gspread
 import asyncio
+import threading
 
 from flask import Flask, request, jsonify
 from google.oauth2.service_account import Credentials
@@ -35,14 +36,20 @@ sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 carts = {}
 flask_app = Flask(__name__)
 
-# Crea e inizializza l'application
+# Loop asyncio persistente in un thread separato
+loop = asyncio.new_event_loop()
+
+def start_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+loop_thread = threading.Thread(target=start_loop, args=(loop,), daemon=True)
+loop_thread.start()
+
+# Crea e inizializza application nel loop persistente
 application = Application.builder().token(TOKEN).build()
-
-# Inizializza subito in modo sincrono
-async def init_app():
-    await application.initialize()
-
-asyncio.run(init_app())
+future = asyncio.run_coroutine_threadsafe(application.initialize(), loop)
+future.result(timeout=30)
 
 
 def get_products():
@@ -172,7 +179,10 @@ def index():
 @flask_app.route("/webhook", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
+    future = asyncio.run_coroutine_threadsafe(
+        application.process_update(update), loop
+    )
+    future.result(timeout=30)
     return jsonify({"ok": True})
 
 
