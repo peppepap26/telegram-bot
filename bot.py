@@ -26,6 +26,7 @@ sheet_products = client.open_by_key(SHEET_ID).worksheet("PRODUCTS")
 sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 
 carts = {}
+cart_message_ids = {}  # salva l'id del messaggio carrello per ogni utente
 flask_app = Flask(__name__)
 
 
@@ -35,7 +36,8 @@ def send_message(chat_id, text, reply_markup=None):
     data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
-    req.post(f"{API}/sendMessage", data=data)
+    r = req.post(f"{API}/sendMessage", data=data)
+    return r.json()
 
 
 def edit_message(chat_id, message_id, text, reply_markup=None):
@@ -43,6 +45,10 @@ def edit_message(chat_id, message_id, text, reply_markup=None):
     if reply_markup:
         data["reply_markup"] = json.dumps(reply_markup)
     req.post(f"{API}/editMessageText", data=data)
+
+
+def delete_message(chat_id, message_id):
+    req.post(f"{API}/deleteMessage", data={"chat_id": chat_id, "message_id": message_id})
 
 
 def answer_callback(callback_id, text=""):
@@ -84,26 +90,61 @@ def get_cart(user_id):
     return carts[user_id]
 
 
-# ── Keyboard builders ─────────────────────────────────────────────
+# ── Cart helpers ──────────────────────────────────────────────────
 
-def cart_keyboard(total):
+def build_cart_text(cart, products):
+    if not cart:
+        return "🛒 *CARRELLO*\n\nIl carrello è vuoto"
+    total = 0
+    text = "🛒 *CARRELLO*\n\n"
+    for pid, qty in cart.items():
+        p = products[pid]
+        subtotal = p["price"] * qty
+        total += subtotal
+        text += f"• *{p['name']}* x{qty} = {subtotal:.2f}€\n"
+    text += f"\n💰 *Totale: {total:.2f}€*"
+    return text, total
+
+
+def build_cart_keyboard(total):
     return {
         "inline_keyboard": [
-            [{"text": "💳 Paga PayPal", "url": f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"}],
-            [{"text": "✅ Conferma Ordine", "callback_data": "confirm"}],
+            [{"text": f"💳 Paga con PayPal {total:.2f}€", "url": f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"}],
+            [{"text": "✅ Ho pagato → Conferma Ordine", "callback_data": "confirm"}],
             [{"text": "🔙 Torna al catalogo", "callback_data": "catalogo"}]
         ]
     }
 
 
+def update_cart_message(chat_id, user_id, products):
+    cart = get_cart(user_id)
+    result = build_cart_text(cart, products)
+
+    if isinstance(result, tuple):
+        text, total = result
+        keyboard = build_cart_keyboard(total)
+    else:
+        text = result
+        keyboard = {"inline_keyboard": [[{"text": "🔙 Torna al catalogo", "callback_data": "catalogo"}]]}
+
+    # Aggiorna o crea il messaggio carrello
+    if user_id in cart_message_ids:
+        edit_message(chat_id, cart_message_ids[user_id], text, keyboard)
+    else:
+        r = send_message(chat_id, text, keyboard)
+        if r.get("ok"):
+            cart_message_ids[user_id] = r["result"]["message_id"]
+
+
 # ── Handlers ──────────────────────────────────────────────────────
 
-def handle_start(chat_id):
+def handle_start(chat_id, user_id):
     try:
-        print("Leggo prodotti da Google Sheets...", flush=True)
-        products = get_products()
-        print(f"Prodotti trovati: {products}", flush=True)
+        # Resetta il messaggio carrello salvato
+        if user_id in cart_message_ids:
+            del cart_message_ids[user_id]
 
+        products = get_products()
         text = "🛍️ *CATALOGO*\n\n"
         keyboard = {"inline_keyboard": []}
 
@@ -111,11 +152,11 @@ def handle_start(chat_id):
             text += f"*{p['name']}*\n💰 {p['price']}€ | 📦 Stock: {p['stock']}\n\n"
             keyboard["inline_keyboard"].append([
                 {"text": f"➕ {p['name']}", "callback_data": f"add_{pid}"},
-                {"text": f"➖ Rimuovi", "callback_data": f"remove_{pid}"}
+                {"text": "➖ Rimuovi", "callback_data": f"remove_{pid}"}
             ])
 
         keyboard["inline_keyboard"].append([
-            {"text": "🛒 Carrello", "callback_data": "cart"}
+            {"text": "🛒 Vedi Carrello", "callback_data": "cart"}
         ])
 
         send_message(chat_id, text, keyboard)
@@ -142,6 +183,7 @@ def handle_callback(callback_query):
         cart[pid] = cart.get(pid, 0) + 1
         update_stock(pid, products[pid]["stock"] - 1)
         answer_callback(query_id, f"✅ {products[pid]['name']} aggiunto!")
+        update_cart_message(chat_id, user_id, products)
 
     elif data.startswith("remove_"):
         pid = int(data.split("_")[1])
@@ -151,27 +193,19 @@ def handle_callback(callback_query):
             if cart[pid] <= 0:
                 del cart[pid]
             answer_callback(query_id, "Rimosso dal carrello")
+            update_cart_message(chat_id, user_id, products)
         else:
-            answer_callback(query_id, "Non hai questo prodotto nel carrello")
+            answer_callback(query_id, "Non hai questo prodotto nel carrello ❌")
 
     elif data == "cart":
         answer_callback(query_id)
-        total = 0
-        if not cart:
-            text = "🛒 *CARRELLO*\n\nIl carrello è vuoto"
-            edit_message(chat_id, message_id, text)
-        else:
-            text = "🛒 *CARRELLO*\n\n"
-            for pid, qty in cart.items():
-                p = products[pid]
-                subtotal = p["price"] * qty
-                total += subtotal
-                text += f"*{p['name']}* x{qty} = {subtotal:.2f}€\n"
-            text += f"\n💰 *Totale: {total:.2f}€*"
-            edit_message(chat_id, message_id, text, cart_keyboard(total))
+        update_cart_message(chat_id, user_id, products)
 
     elif data == "confirm":
         answer_callback(query_id)
+        if not cart:
+            answer_callback(query_id, "Il carrello è vuoto ❌")
+            return
         total = 0
         for pid, qty in cart.items():
             p = products[pid]
@@ -179,11 +213,13 @@ def handle_callback(callback_query):
             total += subtotal
             save_sale(p["name"], qty, p["price"], subtotal)
         carts[user_id] = {}
-        edit_message(chat_id, message_id, f"✅ *Ordine confermato!*\n\nTotale: {total:.2f}€\n\nGrazie! 🎉")
+        if user_id in cart_message_ids:
+            del cart_message_ids[user_id]
+        edit_message(chat_id, message_id, f"✅ *Ordine confermato!*\n\nTotale: {total:.2f}€\n\nGrazie mille! 🎉")
 
     elif data == "catalogo":
         answer_callback(query_id)
-        handle_start(chat_id)
+        handle_start(chat_id, user_id)
 
 
 # ── Flask routes ──────────────────────────────────────────────────
@@ -197,15 +233,14 @@ def index():
 def webhook():
     try:
         update = request.get_json(force=True)
-        print(f"UPDATE RICEVUTO: {update}", flush=True)
 
         if "message" in update:
             msg = update["message"]
             chat_id = msg["chat"]["id"]
+            user_id = msg["from"]["id"]
             text = msg.get("text", "")
-            print(f"MESSAGGIO: {text} da {chat_id}", flush=True)
             if text == "/start":
-                handle_start(chat_id)
+                handle_start(chat_id, user_id)
 
         elif "callback_query" in update:
             handle_callback(update["callback_query"])
