@@ -1,24 +1,17 @@
 import os
 import json
 import gspread
-import asyncio
-import threading
+import requests as req
 
 from flask import Flask, request, jsonify
 from google.oauth2.service_account import Credentials
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-)
 
 TOKEN = os.getenv("TOKEN")
 PAYPAL_USER = os.getenv("PAYPAL_USER")
 SHEET_ID = os.getenv("SHEET_ID")
 RENDER_URL = os.getenv("RENDER_URL")
 PORT = int(os.getenv("PORT", 10000))
+API = f"https://api.telegram.org/bot{TOKEN}"
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -28,7 +21,6 @@ SCOPES = [
 creds_json = os.getenv("GOOGLE_CREDS_JSON")
 creds_dict = json.loads(creds_json)
 creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-
 client = gspread.authorize(creds)
 sheet_products = client.open_by_key(SHEET_ID).worksheet("PRODUCTS")
 sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
@@ -36,21 +28,35 @@ sheet_sales = client.open_by_key(SHEET_ID).worksheet("SALES")
 carts = {}
 flask_app = Flask(__name__)
 
-# Loop asyncio persistente in un thread separato
-loop = asyncio.new_event_loop()
 
-def start_loop(loop):
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
+# ── Telegram helpers ──────────────────────────────────────────────
 
-loop_thread = threading.Thread(target=start_loop, args=(loop,), daemon=True)
-loop_thread.start()
+def send_photo(chat_id, photo, caption, reply_markup=None):
+    data = {"chat_id": chat_id, "photo": photo, "caption": caption}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    req.post(f"{API}/sendPhoto", data=data)
 
-# Crea e inizializza application nel loop persistente
-application = Application.builder().token(TOKEN).build()
-future = asyncio.run_coroutine_threadsafe(application.initialize(), loop)
-future.result(timeout=30)
 
+def send_message(chat_id, text, reply_markup=None):
+    data = {"chat_id": chat_id, "text": text}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    req.post(f"{API}/sendMessage", data=data)
+
+
+def edit_message(chat_id, message_id, text, reply_markup=None):
+    data = {"chat_id": chat_id, "message_id": message_id, "text": text}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
+    req.post(f"{API}/editMessageText", data=data)
+
+
+def answer_callback(callback_id, text=""):
+    req.post(f"{API}/answerCallbackQuery", data={"callback_query_id": callback_id, "text": text})
+
+
+# ── Google Sheets helpers ─────────────────────────────────────────
 
 def get_products():
     rows = sheet_products.get_all_records()
@@ -75,10 +81,7 @@ def save_sale(product, qty, price, total):
     from datetime import datetime
     sheet_sales.append_row([
         datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        product,
-        qty,
-        price,
-        total
+        product, qty, price, total
     ])
 
 
@@ -88,47 +91,59 @@ def get_cart(user_id):
     return carts[user_id]
 
 
+# ── Keyboard builders ─────────────────────────────────────────────
+
 def product_keyboard(pid):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("➕ Aggiungi", callback_data=f"add_{pid}"),
-            InlineKeyboardButton("➖ Rimuovi", callback_data=f"remove_{pid}")
-        ],
-        [InlineKeyboardButton("🛒 Carrello", callback_data="cart")]
-    ])
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "➕ Aggiungi", "callback_data": f"add_{pid}"},
+                {"text": "➖ Rimuovi", "callback_data": f"remove_{pid}"}
+            ],
+            [{"text": "🛒 Carrello", "callback_data": "cart"}]
+        ]
+    }
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def cart_keyboard(total):
+    return {
+        "inline_keyboard": [
+            [{"text": "💳 Paga PayPal", "url": f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"}],
+            [{"text": "✅ Conferma Ordine", "callback_data": "confirm"}]
+        ]
+    }
+
+
+# ── Handlers ──────────────────────────────────────────────────────
+
+def handle_start(chat_id):
     products = get_products()
     for pid, p in products.items():
-        await update.message.reply_photo(
-            photo=p["img"],
-            caption=(
-                f"{p['name']}\n"
-                f"💰 {p['price']}€\n"
-                f"📦 Stock: {p['stock']}"
-            ),
-            reply_markup=product_keyboard(pid)
+        send_photo(
+            chat_id,
+            p["img"],
+            f"{p['name']}\n💰 {p['price']}€\n📦 Stock: {p['stock']}",
+            product_keyboard(pid)
         )
 
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
+def handle_callback(callback_query):
+    query_id = callback_query["id"]
+    chat_id = callback_query["message"]["chat"]["id"]
+    message_id = callback_query["message"]["message_id"]
+    user_id = callback_query["from"]["id"]
+    data = callback_query["data"]
     cart = get_cart(user_id)
-    data = query.data
     products = get_products()
 
     if data.startswith("add_"):
         pid = int(data.split("_")[1])
         if products[pid]["stock"] <= 0:
-            await query.answer("Prodotto esaurito")
+            answer_callback(query_id, "Prodotto esaurito ❌")
             return
         cart[pid] = cart.get(pid, 0) + 1
         update_stock(pid, products[pid]["stock"] - 1)
-        await query.answer("Aggiunto al carrello ✅")
+        answer_callback(query_id, "Aggiunto al carrello ✅")
 
     elif data.startswith("remove_"):
         pid = int(data.split("_")[1])
@@ -137,12 +152,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_stock(pid, products[pid]["stock"] + 1)
             if cart[pid] <= 0:
                 del cart[pid]
-        await query.answer("Rimosso dal carrello")
+        answer_callback(query_id, "Rimosso dal carrello")
 
     elif data == "cart":
+        answer_callback(query_id)
         total = 0
         if not cart:
             text = "🛒 CARRELLO\n\nIl carrello è vuoto"
+            edit_message(chat_id, message_id, text)
         else:
             text = "🛒 CARRELLO\n\n"
             for pid, qty in cart.items():
@@ -150,15 +167,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subtotal = p["price"] * qty
                 total += subtotal
                 text += f"{p['name']} x{qty} = {subtotal:.2f}€\n"
-
-        paypal = f"https://www.paypal.me/{PAYPAL_USER}/{total:.2f}"
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Paga PayPal", url=paypal)],
-            [InlineKeyboardButton("✅ Conferma Ordine", callback_data="confirm")]
-        ])
-        await query.edit_message_text(text=text, reply_markup=keyboard)
+            text += f"\nTotale: {total:.2f}€"
+            edit_message(chat_id, message_id, text, cart_keyboard(total))
 
     elif data == "confirm":
+        answer_callback(query_id)
         total = 0
         for pid, qty in cart.items():
             p = products[pid]
@@ -166,10 +179,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             total += subtotal
             save_sale(p["name"], qty, p["price"], subtotal)
         carts[user_id] = {}
-        await query.edit_message_text(
-            text=f"✅ Ordine confermato\n\nTotale pagato: {total:.2f}€"
-        )
+        edit_message(chat_id, message_id, f"✅ Ordine confermato!\n\nTotale: {total:.2f}€")
 
+
+# ── Flask routes ──────────────────────────────────────────────────
 
 @flask_app.route("/")
 def index():
@@ -178,19 +191,22 @@ def index():
 
 @flask_app.route("/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    future = asyncio.run_coroutine_threadsafe(
-        application.process_update(update), loop
-    )
-    # non aspettiamo, risponde subito
+    update = request.get_json(force=True)
+
+    if "message" in update:
+        msg = update["message"]
+        chat_id = msg["chat"]["id"]
+        text = msg.get("text", "")
+        if text == "/start":
+            handle_start(chat_id)
+
+    elif "callback_query" in update:
+        handle_callback(update["callback_query"])
+
     return jsonify({"ok": True})
 
 
-# Registra handler
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(button_handler))
-
-print("BOT AVVIATO con WEBHOOK ✅")
+print("BOT AVVIATO ✅")
 
 if __name__ == "__main__":
     flask_app.run(host="0.0.0.0", port=PORT)
